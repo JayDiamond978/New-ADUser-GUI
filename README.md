@@ -1,2 +1,5 @@
 # New-ADUser-GUI
-Script with a form to automate the creation Active Directory users for those lazy windows admins that also likes to have something to look at.
+Create a new Active Directory user with a GUI
+Something for those lazy windows admins that also likes/need a GUI <--- I'm one of those admins
+
+***Fully functional but still a work in progress***
