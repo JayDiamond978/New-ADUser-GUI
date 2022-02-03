@@ -1,5 +1,18 @@
-﻿Add-Type -AssemblyName System.Windows.Forms
+﻿'''
+02/01/22
+Changed admin to auto detect groups and user properties to assign to new admin accounts that will be created
+Changed global properties to auto detect Home Drive, Home Directory and Profile based on current admin properties
+02/02/22
+Edited A1 and A2 switches <-- A1 can create a2 with no need for setting manual properties
+Auto set homedrive, homefolder and profile based on admin`s settings
+Fixed other small bugs I found here and there
+Need to put validation, only allow a1/admin accounts create other a1/admins
+'''
+
+Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+
+Import-Module ActiveDirectory
 
 function createForm
 {   
@@ -56,34 +69,34 @@ function createTextBox
 {
         
         #user's first name
-        $global:fBox = New-Object System.Windows.Forms.TextBox
+        $script:fBox = New-Object System.Windows.Forms.TextBox
         $fBox.Location = New-Object System.Drawing.Size(100,10)
         $fBox.Size = New-Object System.Drawing.Size(100,100)
         $form.Controls.Add($fBox)
         
         #initials
-        $global:iBox = New-Object System.Windows.Forms.TextBox
+        $script:iBox = New-Object System.Windows.Forms.TextBox
         $iBox.Location = New-Object System.Drawing.Size(100,40)
         $iBox.Size = New-Object System.Drawing.Size(100,100)
         $form.Controls.Add($iBox)
 
         #user's last name
-        $global:lBox = New-Object System.Windows.Forms.TextBox
+        $script:lBox = New-Object System.Windows.Forms.TextBox
         $lBox.Location = New-Object System.Drawing.Size(100,70)
         $lBox.Size = New-Object System.Drawing.Size(100,100)
         $form.Controls.Add($lBox)
 
         #user's username
-        $global:uBox = New-Object System.Windows.Forms.TextBox
+        $script:uBox = New-Object System.Windows.Forms.TextBox
         $uBox.Location = New-Object System.Drawing.Size(100,100)
         $uBox.Size = New-Object System.Drawing.Size(100,100)
         $form.Controls.Add($uBox)
 
         #user's password
-        $global:pBox = New-Object System.Windows.Forms.MaskedTextBox
+        $script:pBox = New-Object System.Windows.Forms.MaskedTextBox
         $pBox.Location = New-Object System.Drawing.Size(100,130)
         $pBox.Size = New-Object System.Drawing.Size(100,100)
-        $global:pbox.passwordchar = "*"
+        $pbox.passwordchar = "*"
         $form.Controls.Add($pBox)
 
 }
@@ -100,8 +113,6 @@ function createDropDowns
     {
         [void] $typeList.items.Add(($type).type)
     }
-    
-
 }
 
 function createButton
@@ -127,6 +138,16 @@ function createADuser
     $uName = $uBox.Text
     $domain = "@$env:USERDNSDOMAIN"
 
+    <#
+    Sets up new profile, homedrive and homefolder. $userHomeDirectory and $userProfile will throw an error
+    if the admin creating the account does not have a homefolder and/or profile but it can be ignored
+    #>     
+    $currentUserProfile = (Get-ADUser -Identity $env:USERNAME -Properties ProfilePath).ProfilePath
+    $userProfile = $currentUserProfile.replace($env:USERNAME, "$uname")
+    $userHomeDrive = (Get-ADUser -Identity $env:USERNAME -Properties HomeDrive).HomeDrive
+    $currentUserHomeDirectory =  (Get-ADUser -Identity $env:USERNAME -Properties HomeDirectory).HomeDirectory
+    $userHomeDirectory = $currentUserHomeDirectory.replace($env:USERNAME, "$uName")
+
     #Takes the password and converts it to a secure string
     $plainP = $pBox.Text
     $secureP = ConvertTo-SecureString $plainP -AsPlainText -Force
@@ -139,20 +160,7 @@ function createADuser
     else 
     {
         $dName = "$lName, $fName $iName."
-    }
-
-    #Extra Properties
-
-    #global properties that apply to everyone
-    #properties.csv | OU, user profile, mapped home drive, home directory
-    $userProps = Import-Csv -Path .\properties.csv
-    foreach ($d in $userProps)
-    {
-        $organizationUnit = ($d).OU  #this needs to be moved to specific
-        $userProfile = ($d).profile
-        $userHomeDrive = ($d).homeDrive
-        $userHomeDirectory = ($d).homeDirectory
-    }
+    }    
 
     #designates OU
     switch ($typeList.SelectedItem)
@@ -168,29 +176,45 @@ function createADuser
 
         "admin" 
         {
-            $userOU = Import-Csv -Path .\admin\adminUserOU.csv
-            $organizationUnit = ($userOU).ou
+            
+            #This finds the OU the current admin is in to assign to the new admin
+            $adminCN = (Get-ADUser -Identity $env:USERNAME -Properties DistinguishedName).distinguishedname 
+            $organizationUnit = ($adminCN -split ",", 3)[2]
 
-            $userDescription = Import-Csv -Path .\admin\adminDescription.csv
-            $description = ($userDescription).description
+            $description = (Get-ADUser -Identity $env:USERNAME -Properties description).description #gets description
+            $name = "!" + $dName
+            
         }
 
         "a1" 
         {
-            $userOU = Import-Csv -Path .\a1\a1UserOU.csv
-            $organizationUnit = ($userOU).ou
+            
+            #This finds the OU the current a1 admin is in to assign to the new a1 admin
+            $a1CN = (Get-ADUser -Identity $env:USERNAME -Properties DistinguishedName).distinguishedname 
+            $organizationUnit = ($a1CN -split ",", 3)[2]
 
-            $userDescription = Import-Csv -Path .\a1\a1Description.csv
-            $description = ($userDescription).description
+            $description = (Get-ADUser -Identity $env:USERNAME -Properties description).description #gets description
+            $name = "A1 " + $dName
+
         }
 
         "a2" 
         {
-            $userOU = Import-Csv -Path .\a2\a2UserOU.csv
-            $organizationUnit = ($userOU).ou
-
-            $userDescription = Import-Csv -Path .\a2\a2Description.csv
-            $description = ($userDescription).description
+            #If using A1 account to create, it will look for the user's a2 account to copy properties
+            if ($env:USERNAME.split(".")[0] -eq "a1")
+            {
+                $a2UserName = "a2" + ($env:USERNAME -split ".", 3)[2] #<-- Big sus, should really be 2 and 1
+                $a2CN = (Get-ADUser -Identity $a2UserName -Properties DistinguishedName).distinguishedname 
+                $organizationUnit = ($a2CN -split ",", 2)[1]
+                $description = (Get-ADUser -Identity $env:USERNAME -Properties description).description #gets description
+                $name = "A2 " + $dName
+            }
+            else
+            {
+                $a2CN = (Get-ADUser -Identity $env:USERNAME -Properties DistinguishedName).distinguishedname 
+                $organizationUnit = ($a2CN -split ",", 3)[2]
+                $description = (Get-ADUser -Identity $env:USERNAME -Properties description).description #gets description
+            }
         }
 
         "m1" 
@@ -217,10 +241,10 @@ function createADuser
 
    
     #Command to create AD user
-    New-ADUser -Name $uname -SamAccountName $uname -UserPrincipalName "$uname$domain" `
+    New-ADUser -Name $name -SamAccountName $uname -UserPrincipalName "$uname$domain" `
     -GivenName $fName -Initials $iName -Surname $lName -DisplayName $dName `
-    -AccountPassword $secureP -description $description -ProfilePath $userProfile$uName `
-    -HomeDrive $userHomeDrive -HomeDirectory $userHomeDirectory$uName -Path "$organizationUnit" `
+    -AccountPassword $secureP -description $description -ProfilePath $userProfile `
+    -HomeDrive $userHomeDrive -HomeDirectory $userHomeDirectory -Path "$organizationUnit" `
     -Enabled $true
     
 
@@ -233,31 +257,52 @@ function createADuser
 
         "admin" 
         {
-            $groups = Import-Csv -Path .\admin\adminUserGroups.csv
-            foreach ($group in $groups)
+            #This finds the groups the current admin is in to assign to the new admin
+            $adminGroupList = (Get-ADUser $env:USERNAME -Properties MemberOf).MemberOf
+
+            Foreach ($groupDN in $adminGroupList)
             {
-                $groupName = ($group).groups
+                $isolateCN = $groupDN.split(",")[0]
+                $groupName = $isolateCN.split("=")[1]
                 Add-ADGroupMember -Identity $groupName -Members $uName
             }
         }
 
         "a1" 
         {
-            $groups = Import-Csv -Path .\a1\a1UserGroups.csv
-            foreach ($group in $groups)
+            $a1GroupList = (Get-ADUser $env:USERNAME -Properties MemberOf).MemberOf
+
+            Foreach ($groupDN in $a1GroupList)
             {
-                $groupName = ($group).groups
+                $isolateCN = $groupDN.split(",")[0]
+                $groupName = $isolateCN.split("=")[1]
                 Add-ADGroupMember -Identity $groupName -Members $uName
             }
         }
 
         "a2" 
         {
-            $groups = Import-Csv -Path .\a2\a2UserGroups.csv
-            foreach ($group in $groups)
+            if ($env:USERNAME.split(".")[0] -eq "a1")
             {
-                $groupName = ($group).groups
-                Add-ADGroupMember -Identity $groupName -Members $uName
+                $a2UserName = "a2" + ($env:USERNAME -split ".", 3)[2] #<-- Big sus, should really be 2 and 1
+                $a2GroupList = (Get-ADUser $a2UserName -Properties MemberOf).MemberOf
+                Foreach ($groupDN in $a2GroupList)
+                {
+                    $isolateCN = $groupDN.split(",")[0]
+                    $groupName = $isolateCN.split("=")[1]
+                    Add-ADGroupMember -Identity $groupName -Members $uName
+                }
+            }
+
+            else
+            {
+                $a2GroupList = (Get-ADUser $env:USERNAME -Properties MemberOf).MemberOf
+                Foreach ($groupDN in $a2GroupList)
+                {
+                    $isolateCN = $groupDN.split(",")[0]
+                    $groupName = $isolateCN.split("=")[1]
+                    Add-ADGroupMember -Identity $groupName -Members $uName
+                }
             }
         }
 
