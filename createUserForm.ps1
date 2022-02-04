@@ -157,6 +157,21 @@ function createADuser
     {
         "General" 
         {
+            #Need OU, Description and name
+            $adminCN = (Get-ADUser -Identity $env:USERNAME -Properties DistinguishedName).distinguishedname
+            $tempList = $adminCN -split ","
+            $organizationUnit = ""
+            $index = 1
+            foreach ($i in $tempList)
+            {
+                if ($i -like "*user*") 
+                {
+                    $organizationUnit = ($adminCN -split ",", $index)[-1]
+                }
+                else {$index += 1}
+            }
+            $description = "Domain User"
+            $name = $dName
         }
 
         "Admin" 
