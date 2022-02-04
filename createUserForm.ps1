@@ -1,4 +1,4 @@
-﻿Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 Import-Module ActiveDirectory
@@ -287,7 +287,7 @@ function createADuser
             }
         }
 
-        #loops through group list for members, loops through group for members, if members of group == amount of m1 users add user to group
+        #M1/M2 switches need to get fixed, logic is not justified
         "M1" 
         {
             $totalM1Users = (get-aduser -Filter "SamAccountName -like 'm1.*' -and Enabled -eq 'true'").SamAccountName
