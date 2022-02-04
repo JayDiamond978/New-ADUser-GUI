@@ -1,15 +1,4 @@
-﻿'''
-02/01/22
-Changed admin to auto detect groups and user properties to assign to new admin accounts that will be created
-Changed global properties to auto detect Home Drive, Home Directory and Profile based on current admin properties
-02/02/22
-Edited A1 and A2 switches <-- A1 can create a2 with no need for setting manual properties
-Auto set homedrive, homefolder and profile based on admin`s settings
-Fixed other small bugs I found here and there
-Need to put validation, only allow a1/admin accounts create other a1/admins
-'''
-
-Add-Type -AssemblyName System.Windows.Forms
+﻿Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 Import-Module ActiveDirectory
@@ -52,7 +41,6 @@ function createLabels
     foreach ($labelName in $labelList)
     {
 
-        #Adding labels to forms
         $label = New-Object System.Windows.Forms.Label
         $label.Location = New-Object System.Drawing.Size(8,$y)
         $label.Size = New-Object System.Drawing.Size(80,20)
@@ -103,15 +91,23 @@ function createTextBox
 
 function createDropDowns
 {
-    $userTypes = Import-Csv -Path .\typeList.csv
+    #Detects if AC3 based on current admin's username, limits options in dropdown
+    if ($env:USERNAME -contains "a1" -or $env:USERNAME -contains "a2")
+    {
+        $userTypes = @("General", "M1", "M2", "A1", "A2")     
+    }
+    else
+    {
+        $userTypes = @("General", "Admin")
+    }
 
-    $global:typeList = New-Object System.Windows.Forms.ComboBox
+    $script:typeList = New-Object System.Windows.Forms.ComboBox
     $typeList.Location = New-Object System.Drawing.Size(100,160)
     $typeList.Size = New-Object System.Drawing.Size(100,100)
     $form.Controls.Add($typeList)
     ForEach ($type in $userTypes)
     {
-        [void] $typeList.items.Add(($type).type)
+        [void] $typeList.items.Add($type)
     }
 }
 
@@ -128,87 +124,73 @@ function createButton
 
 }
 
-#This is where it gets real messy
+#This is where it gets real messy at some point this will get separated into multiple functions
 function createADuser
 {
-    #Sets user's first, last, initial and username and domain
+    #Sets user's first, initial, last, username and domain in that order based on the response from the form
     $fName = $fBox.Text
     $iName = $iBox.Text
     $lName = $lBox.Text
     $uName = $uBox.Text
     $domain = "@$env:USERDNSDOMAIN"
 
-    <#
-    Sets up new profile, homedrive and homefolder. $userHomeDirectory and $userProfile will throw an error
-    if the admin creating the account does not have a homefolder and/or profile but it can be ignored
-    #>     
+    #Sets user's roaming profile, homedrive and homedirectory all based on the current admin's properties
     $currentUserProfile = (Get-ADUser -Identity $env:USERNAME -Properties ProfilePath).ProfilePath
     $userProfile = $currentUserProfile.replace($env:USERNAME, "$uname")
     $userHomeDrive = (Get-ADUser -Identity $env:USERNAME -Properties HomeDrive).HomeDrive
     $currentUserHomeDirectory =  (Get-ADUser -Identity $env:USERNAME -Properties HomeDirectory).HomeDirectory
     $userHomeDirectory = $currentUserHomeDirectory.replace($env:USERNAME, "$uName")
 
-    #Takes the password and converts it to a secure string
+    #Takes the password from the password textbox and converts it to a secure string
     $plainP = $pBox.Text
     $secureP = ConvertTo-SecureString $plainP -AsPlainText -Force
     
-     #Sets up user's display name
+    #Sets up user's display name
     if (!$iName)
-    {
-        $dName = "$lName, $fName"
-    }
-    else 
-    {
-        $dName = "$lName, $fName $iName."
-    }    
+    {$dName = "$lName, $fName"}
 
-    #designates OU
+    else 
+    {$dName = "$lName, $fName $iName."}    
+
+    #This section sets the user's OU and description <-- General has not been set up yet
     switch ($typeList.SelectedItem)
     {
-        "general" 
+        "General" 
         {
-            $userOU = Import-Csv -Path .\general\generalUserOU.csv
-            $organizationUnit = ($userOU).ou
-
-            $userDescription = Import-Csv -Path .\general\generalDescription.csv
-            $description = ($userDescription).description
         }
 
-        "admin" 
+        "Admin" 
         {
-            
             #This finds the OU the current admin is in to assign to the new admin
             $adminCN = (Get-ADUser -Identity $env:USERNAME -Properties DistinguishedName).distinguishedname 
             $organizationUnit = ($adminCN -split ",", 3)[2]
 
             $description = (Get-ADUser -Identity $env:USERNAME -Properties description).description #gets description
-            $name = "!" + $dName
-            
+            $name = "!" + $dName 
         }
 
-        "a1" 
+        "A1" 
         {
-            
             #This finds the OU the current a1 admin is in to assign to the new a1 admin
             $a1CN = (Get-ADUser -Identity $env:USERNAME -Properties DistinguishedName).distinguishedname 
             $organizationUnit = ($a1CN -split ",", 3)[2]
 
             $description = (Get-ADUser -Identity $env:USERNAME -Properties description).description #gets description
             $name = "A1 " + $dName
-
         }
 
-        "a2" 
+        "A2" 
         {
             #If using A1 account to create, it will look for the user's a2 account to copy properties
             if ($env:USERNAME.split(".")[0] -eq "a1")
             {
-                $a2UserName = "a2" + ($env:USERNAME -split ".", 3)[2] #<-- Big sus, should really be 2 and 1
+                $a2UserName = "a2" + ($env:USERNAME -split ".", 3)[2]
                 $a2CN = (Get-ADUser -Identity $a2UserName -Properties DistinguishedName).distinguishedname 
                 $organizationUnit = ($a2CN -split ",", 2)[1]
                 $description = (Get-ADUser -Identity $env:USERNAME -Properties description).description #gets description
                 $name = "A2 " + $dName
             }
+
             else
             {
                 $a2CN = (Get-ADUser -Identity $env:USERNAME -Properties DistinguishedName).distinguishedname 
@@ -217,28 +199,25 @@ function createADuser
             }
         }
 
-        "m1" 
+        #M1 and M2 accounts get queried, first active m1 account is used as reference
+        "M1" 
         {
-            $userOU = Import-Csv -Path .\m1\m1UserOU.csv
-            $organizationUnit = ($userOU).ou
-
-            $userDescription = Import-Csv -Path .\m1\m1Description.csv
-            $description = ($userDescription).description
+            $m1SamName = ((get-aduser -Filter "UserPrincipalName -like 'm1.*' -and Enabled -eq 'true'").samaccountname[0])
+            $m1CN = (get-aduser -Identity $m1SamName).distinguishedname
+            $organizationUnit = ($m1CN -split ",", 3)[2]
+            $description = (Get-ADUser -Identity $m1SamName -Properties description).description
         }
 
-        "m2" 
+        "M2" 
         {
-            $userOU = Import-Csv -Path .\m2\m2UserOU.csv
-            $organizationUnit = ($userOU).ou
-
-            $userDescription = Import-Csv -Path .\m2\m2Description.csv
-            $description = ($userDescription).description
+            $m2SamName = ((get-aduser -Filter "UserPrincipalName -like 'm2.*' -and Enabled -eq 'true'").samaccountname[0])
+            $m2CN = (get-aduser -Identity $m2SamName).distinguishedname
+            $organizationUnit = ($m1CN -split ",", 3)[2]
+            $description = (Get-ADUser -Identity $m2SamName -Properties description).description
         }
 
-        default {$typeList.SelectedItem = $typeList.items[0]}
+        default {$typeList.SelectedItem = $typeList.items[0]} #If dropdown is blank it defaults to general user
     }
-
-
    
     #Command to create AD user
     New-ADUser -Name $name -SamAccountName $uname -UserPrincipalName "$uname$domain" `
@@ -248,14 +227,14 @@ function createADuser
     -Enabled $true
     
 
-    #After user objects get created they are added to their respective groups\
+    #After user objects get created they are added to their respective groups <-- Need to set up General
     switch ($typeList.SelectedItem)
     {
-        "general" 
+        "General" 
         {
         }
 
-        "admin" 
+        "Admin" 
         {
             #This finds the groups the current admin is in to assign to the new admin
             $adminGroupList = (Get-ADUser $env:USERNAME -Properties MemberOf).MemberOf
@@ -268,7 +247,7 @@ function createADuser
             }
         }
 
-        "a1" 
+        "A1" 
         {
             $a1GroupList = (Get-ADUser $env:USERNAME -Properties MemberOf).MemberOf
 
@@ -280,11 +259,12 @@ function createADuser
             }
         }
 
-        "a2" 
+        "A2"
         {
+            #If using A1 account to create, it will look for the user's a2 account to copy groups
             if ($env:USERNAME.split(".")[0] -eq "a1")
             {
-                $a2UserName = "a2" + ($env:USERNAME -split ".", 3)[2] #<-- Big sus, should really be 2 and 1
+                $a2UserName = "a2" + ($env:USERNAME -split ".", 3)[2]
                 $a2GroupList = (Get-ADUser $a2UserName -Properties MemberOf).MemberOf
                 Foreach ($groupDN in $a2GroupList)
                 {
@@ -297,32 +277,47 @@ function createADuser
             else
             {
                 $a2GroupList = (Get-ADUser $env:USERNAME -Properties MemberOf).MemberOf
-                Foreach ($groupDN in $a2GroupList)
+
+                    Foreach ($groupDN in $a2GroupList)
+                    {
+                        $isolateCN = $groupDN.split(",")[0]
+                        $groupName = $isolateCN.split("=")[1]
+                        Add-ADGroupMember -Identity $groupName -Members $uName
+                    }
+            }
+        }
+
+        #loops through group list for members, loops through group for members, if members of group == amount of m1 users add user to group
+        "M1" 
+        {
+            $totalM1Users = (get-aduser -Filter "SamAccountName -like 'm1.*' -and Enabled -eq 'true'").SamAccountName
+            $m1SamName = (get-aduser -Filter "SamAccountName -like 'm1.*' -and Enabled -eq 'true'").SamAccountName[0]
+            $m1Groups = (Get-ADUser -Identity $m1SamName -Properties MemberOf).MemberOf
+            Foreach ($groupDN in $m1Groups)
+            {
+                    
+                $isolateCN = $groupDN.split(",")[0]
+                $groupName = $isolateCN.split("=")[1]
+                if ((Get-ADGroup -Identity $groupName -Properties Members).Members.count -eq $totalM1Users)
                 {
-                    $isolateCN = $groupDN.split(",")[0]
-                    $groupName = $isolateCN.split("=")[1]
-                    Add-ADGroupMember -Identity $groupName -Members $uName
-                }
+                    Add-ADGroupMember -Identity $groupName -Members $uName  
+                }                                       
             }
         }
 
-        "m1" 
+        "M2" 
         {
-            $groups = Import-Csv -Path .\m1\m1UserGroups.csv
-            foreach ($group in $groups)
-            {
-                $groupName = ($group).groups
-                Add-ADGroupMember -Identity $groupName -Members $uName
-            }
-        }
-
-        "m2" 
-        {
-            $groups = Import-Csv -Path .\m2\m2UserGroups.csv
-            foreach ($group in $groups)
-            {
-                $groupName = ($group).groups
-                Add-ADGroupMember -Identity $groupName -Members $uName
+            $totalM2Users = (get-aduser -Filter "SamAccountName -like 'm2.*' -and Enabled -eq 'true'").SamAccountName
+            $m2SamName = (get-aduser -Filter "SamAccountName -like 'm2.*' -and Enabled -eq 'true'").SamAccountName[0]
+            $m2Groups = (Get-ADUser -Identity $m2SamName -Properties MemberOf).MemberOf
+            Foreach ($groupDN in $m2Groups)
+            {  
+                $isolateCN = $groupDN.split(",")[0]
+                $groupName = $isolateCN.split("=")[1]
+                if ((Get-ADGroup -Identity $groupName -Properties Members).Members.count -eq $totalM2Users)
+                {
+                    Add-ADGroupMember -Identity $groupName -Members $uName  
+                }                                       
             }
         }
         
