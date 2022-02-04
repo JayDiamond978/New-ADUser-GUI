@@ -1,4 +1,4 @@
-Add-Type -AssemblyName System.Windows.Forms
+﻿Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 Import-Module ActiveDirectory
@@ -92,7 +92,7 @@ function createTextBox
 function createDropDowns
 {
     #Detects if AC3 based on current admin's username, limits options in dropdown
-    if ($env:USERNAME -contains "a1" -or $env:USERNAME -contains "a2")
+    if ($env:USERNAME -like "a1.*" -or $env:USERNAME -like "a2.*")
     {
         $userTypes = @("General", "M1", "M2", "A1", "A2")     
     }
@@ -136,10 +136,10 @@ function createADuser
 
     #Sets user's roaming profile, homedrive and homedirectory all based on the current admin's properties
     $currentUserProfile = (Get-ADUser -Identity $env:USERNAME -Properties ProfilePath).ProfilePath
-    $userProfile = $currentUserProfile.replace($env:USERNAME, "$uname")
-    $userHomeDrive = (Get-ADUser -Identity $env:USERNAME -Properties HomeDrive).HomeDrive
+    $userProfile = $currentUserProfile.replace($env:USERNAME, "$uname") #<-- Throws an error if profile is empty
+    $userHomeDrive = (Get-ADUser -Identity $env:USERNAME -Properties HomeDrive).HomeDrive 
     $currentUserHomeDirectory =  (Get-ADUser -Identity $env:USERNAME -Properties HomeDirectory).HomeDirectory
-    $userHomeDirectory = $currentUserHomeDirectory.replace($env:USERNAME, "$uName")
+    $userHomeDirectory = $currentUserHomeDirectory.replace($env:USERNAME, "$uName") #<-- Throws an error if no homedir
 
     #Takes the password from the password textbox and converts it to a secure string
     $plainP = $pBox.Text
@@ -206,6 +206,7 @@ function createADuser
             $m1CN = (get-aduser -Identity $m1SamName).distinguishedname
             $organizationUnit = ($m1CN -split ",", 3)[2]
             $description = (Get-ADUser -Identity $m1SamName -Properties description).description
+            $name = "M1 " + $dName
         }
 
         "M2" 
@@ -214,6 +215,7 @@ function createADuser
             $m2CN = (get-aduser -Identity $m2SamName).distinguishedname
             $organizationUnit = ($m1CN -split ",", 3)[2]
             $description = (Get-ADUser -Identity $m2SamName -Properties description).description
+            $name = "M2 " + $dName
         }
 
         default {$typeList.SelectedItem = $typeList.items[0]} #If dropdown is blank it defaults to general user
@@ -287,38 +289,71 @@ function createADuser
             }
         }
 
-        #M1/M2 switches need to get fixed, logic is not justified
+        <#Finds same typed user and loops through assigned groups, if groups contains all same type user -1 (The new user) 
+        Then add new user to group                                                                             #>
         "M1" 
         {
             $totalM1Users = (get-aduser -Filter "SamAccountName -like 'm1.*' -and Enabled -eq 'true'").SamAccountName
             $m1SamName = (get-aduser -Filter "SamAccountName -like 'm1.*' -and Enabled -eq 'true'").SamAccountName[0]
             $m1Groups = (Get-ADUser -Identity $m1SamName -Properties MemberOf).MemberOf
-            Foreach ($groupDN in $m1Groups)
+
+            $allM1UserDN = (get-aduser -Filter "SamAccountName -like 'm1.*' -and Enabled -eq 'true'").DistinguishedName
+            
+
+            foreach ($groupDN in $m1Groups)
             {
-                    
+                $matchCount = 0
                 $isolateCN = $groupDN.split(",")[0]
                 $groupName = $isolateCN.split("=")[1]
-                if ((Get-ADGroup -Identity $groupName -Properties Members).Members.count -eq $totalM1Users)
+                $allGroupUsers = (Get-ADGroup -Identity "$groupName" -Properties Members).Members #Saves DN of all users in group
+                
+                foreach ($m1UserDN in $allM1UserDN)
                 {
-                    Add-ADGroupMember -Identity $groupName -Members $uName  
-                }                                       
-            }
+                    if ($allGroupUsers -like $m1UserDN)
+                    {
+                        $matchCount += 1
+                        if ($matchcount -eq ($allM1UserDN.count -1))
+                        {
+                            Add-ADGroupMember -Identity $groupName -Members $uName  
+                
+                        }
+                    }
+                    else {break}
+                }
+            }                
         }
+        
 
         "M2" 
         {
             $totalM2Users = (get-aduser -Filter "SamAccountName -like 'm2.*' -and Enabled -eq 'true'").SamAccountName
             $m2SamName = (get-aduser -Filter "SamAccountName -like 'm2.*' -and Enabled -eq 'true'").SamAccountName[0]
             $m2Groups = (Get-ADUser -Identity $m2SamName -Properties MemberOf).MemberOf
-            Foreach ($groupDN in $m2Groups)
-            {  
+
+            $allM2UserDN = (get-aduser -Filter "SamAccountName -like 'm2.*' -and Enabled -eq 'true'").DistinguishedName
+            
+
+            foreach ($groupDN in $m2Groups)
+            {
+                $matchCount = 0
                 $isolateCN = $groupDN.split(",")[0]
                 $groupName = $isolateCN.split("=")[1]
-                if ((Get-ADGroup -Identity $groupName -Properties Members).Members.count -eq $totalM2Users)
+                $allGroupUsers = (Get-ADGroup -Identity "$groupName" -Properties Members).Members #Saves DN of all users in group
+                
+                foreach ($m2UserDN in $allM2UserDN)
                 {
-                    Add-ADGroupMember -Identity $groupName -Members $uName  
-                }                                       
-            }
+                    if ($allGroupUsers -like $m2UserDN)
+                    {
+                        $matchCount += 1
+                        if ($matchcount -eq ($allM1UserDN.count -1))
+                        {
+                            Add-ADGroupMember -Identity $groupName -Members $uName  
+                
+                        }
+                    }
+                    else {break}
+                }
+            }                
         }
         
         default {$typeList.SelectedItem = $typeList.items[0]}
