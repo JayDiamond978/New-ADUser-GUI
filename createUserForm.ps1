@@ -160,13 +160,14 @@ function createADuser
             #Need OU, Description and name
             $adminCN = (Get-ADUser -Identity $env:USERNAME -Properties DistinguishedName).distinguishedname
             $tempList = $adminCN -split ","
-            $organizationUnit = ""
+            $organizationUnit = "OU=CAUsers, "
             $index = 1
             foreach ($i in $tempList)
             {
                 if ($i -like "*user*") 
                 {
-                    $organizationUnit = ($adminCN -split ",", $index)[-1]
+                    $index += 1
+                    $organizationUnit = $organizationUnit + ($adminCN -split ",", $index)[-1]
                 }
                 else {$index += 1}
             }
