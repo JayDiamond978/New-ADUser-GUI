@@ -1,0 +1,7 @@
+$exchangeHostName = (Get-ADComputer -Filter 'name -like "*exchange"').DNSHostname
+
+$userMailBox = Read-Host -Prompt "Enter user's username"
+$cred = Get-Credential -UserName $env:USERDNSDOMAIN\$env:USERNAME -Message "Please enter your password for authentication with the Exchange Server"
+$Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri http://$exchangeHostName/PowerShell/ -Credential $cred -Authentication Kerberos
+Import-PSSession $Session
+Enable-Mailbox -Identity $userMailBox
