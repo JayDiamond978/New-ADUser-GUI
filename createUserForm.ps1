@@ -244,6 +244,7 @@ function createADuser
     -HomeDrive $userHomeDrive -HomeDirectory $userHomeDirectory -Path "$organizationUnit" `
     -Enabled $true
     
+    Set-ADUser -Identity $uName -ChangePasswordAtLogon $true
 
     #After user objects get created they are added to their respective groups <-- Need to set up General
     switch ($typeList.SelectedItem)
