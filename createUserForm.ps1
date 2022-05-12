@@ -1,4 +1,4 @@
-﻿Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 Import-Module ActiveDirectory
@@ -136,7 +136,7 @@ function createADuser
 
     #Sets user's roaming profile, homedrive and homedirectory all based on the current admin's properties
     $currentUserProfile = (Get-ADUser -Identity $env:USERNAME -Properties ProfilePath).ProfilePath
-    $userProfile = $currentUserProfile.replace($env:USERNAME, "$uname") #<-- Throws an error if profile is empty
+    $userProfile = $currentUserProfile.replace($env:USERNAME, "$uName") #<-- Throws an error if profile is empty
     $userHomeDrive = (Get-ADUser -Identity $env:USERNAME -Properties HomeDrive).HomeDrive 
     $currentUserHomeDirectory =  (Get-ADUser -Identity $env:USERNAME -Properties HomeDirectory).HomeDirectory
     $userHomeDirectory = $currentUserHomeDirectory.replace($env:USERNAME, "$uName") #<-- Throws an error if no homedir
@@ -238,7 +238,7 @@ function createADuser
     }
    
     #Command to create AD user
-    New-ADUser -Name $name -SamAccountName $uname -UserPrincipalName "$uname$domain" `
+    New-ADUser -Name $name -SamAccountName $uName -UserPrincipalName "$uName$domain" `
     -GivenName $fName -Initials $iName -Surname $lName -DisplayName $dName `
     -AccountPassword $secureP -description $description -ProfilePath $userProfile `
     -HomeDrive $userHomeDrive -HomeDirectory $userHomeDirectory -Path "$organizationUnit" `
