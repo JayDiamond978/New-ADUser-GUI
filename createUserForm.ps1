@@ -164,7 +164,7 @@ function createADuser
             $index = 1
             foreach ($i in $tempList)
             {
-                if ($i -like "*user*") 
+                if ($i -like "*admin") 
                 {
                     $index += 1
                     $organizationUnit = $organizationUnit + ($adminCN -split ",", $index)[-1]
